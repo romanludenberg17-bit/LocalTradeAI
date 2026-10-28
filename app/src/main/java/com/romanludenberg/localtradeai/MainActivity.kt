@@ -22,18 +22,22 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.romanludenberg.localtradeai.capture.ScreenCaptureService
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private var capturing = false
+    private var capturing by mutableStateOf(false)
 
     private val capturePermission = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -52,6 +56,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val frame by ScreenCaptureService.latestFrame.collectAsState()
+            var recognizedText by remember { mutableStateOf("No text recognized yet.") }
+            var recognizing by remember { mutableStateOf(false) }
+
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Column(
@@ -70,19 +77,42 @@ class MainActivity : ComponentActivity() {
                         ) { Text("Start capture") }
                         Button(
                             onClick = {
-                                stopService(Intent(this@MainActivity, ScreenCaptureService::class.java).apply {
-                                    action = ScreenCaptureService.ACTION_STOP
-                                })
+                                stopService(Intent(this@MainActivity, ScreenCaptureService::class.java))
                                 capturing = false
                             },
                             enabled = capturing
                         ) { Text("Stop capture") }
+                        Button(
+                            onClick = {
+                                val bitmap = frame
+                                if (bitmap == null) {
+                                    recognizedText = "No captured frame available. Start capture first."
+                                } else if (!recognizing) {
+                                    recognizing = true
+                                    recognizedText = "Recognizing text…"
+                                    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                                    recognizer.process(InputImage.fromBitmap(bitmap, 0))
+                                        .addOnSuccessListener { visionText ->
+                                            recognizedText = visionText.text.ifBlank { "No text found in the captured frame." }
+                                        }
+                                        .addOnFailureListener { error ->
+                                            recognizedText = "OCR failed: ${error.localizedMessage ?: "unknown error"}"
+                                        }
+                                        .addOnCompleteListener {
+                                            recognizing = false
+                                            recognizer.close()
+                                        }
+                                }
+                            },
+                            enabled = frame != null && !recognizing
+                        ) { Text(if (recognizing) "Recognizing…" else "Recognize text") }
+
                         Card(modifier = Modifier.fillMaxWidth()) {
                             if (frame != null) {
                                 Image(
                                     bitmap = frame!!.asImageBitmap(),
                                     contentDescription = "Latest captured screen frame",
-                                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+                                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
                                     contentScale = ContentScale.Fit
                                 )
                             } else {
@@ -92,6 +122,16 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text("Recognized text", style = MaterialTheme.typography.titleMedium)
+                                Text(recognizedText, modifier = Modifier.padding(top = 8.dp))
+                            }
+                        }
+                        Text(
+                            "On-device OCR uses Google ML Kit. Its terms may permit model-download and diagnostic metrics; see the app privacy notice before public release.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }
