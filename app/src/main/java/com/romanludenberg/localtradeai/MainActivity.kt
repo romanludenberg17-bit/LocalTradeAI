@@ -37,6 +37,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.romanludenberg.localtradeai.capture.ScreenCaptureService
 
 class MainActivity : ComponentActivity() {
+    private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private var capturing by mutableStateOf(false)
 
     private val capturePermission = registerForActivityResult(
@@ -50,6 +51,11 @@ class MainActivity : ComponentActivity() {
             ContextCompat.startForegroundService(this, serviceIntent)
             capturing = true
         }
+    }
+
+    override fun onDestroy() {
+        textRecognizer.close()
+        super.onDestroy()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,8 +96,7 @@ class MainActivity : ComponentActivity() {
                                 } else if (!recognizing) {
                                     recognizing = true
                                     recognizedText = "Recognizing text…"
-                                    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                                    recognizer.process(InputImage.fromBitmap(bitmap, 0))
+                                    textRecognizer.process(InputImage.fromBitmap(bitmap, 0))
                                         .addOnSuccessListener { visionText ->
                                             recognizedText = visionText.text.ifBlank { "No text found in the captured frame." }
                                         }
@@ -100,7 +105,6 @@ class MainActivity : ComponentActivity() {
                                         }
                                         .addOnCompleteListener {
                                             recognizing = false
-                                            recognizer.close()
                                         }
                                 }
                             },
