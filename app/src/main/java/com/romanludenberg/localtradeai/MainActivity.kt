@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,24 +36,35 @@ import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.romanludenberg.localtradeai.capture.CropProfile
 import com.romanludenberg.localtradeai.capture.ScreenCaptureService
 
 /**
- * First-pass OCR preprocessing. This deliberately keeps the full width because
- * chart placement varies between apps and split-screen layouts. It trims only
- * the top/bottom UI bands and upscales the remaining image, capped to avoid
- * allocating an excessively large bitmap on-device.
+ * First-pass OCR preprocessing using a configurable UI crop profile.
+ * Pocket Option is the current target; GENERIC remains available as fallback.
+ * This stage only removes known UI bands and upscales the remaining frame.
  */
-private fun preprocessBitmap(original: Bitmap): Bitmap {
-    val top = (original.height * 0.10f).toInt().coerceIn(0, original.height - 1)
-    val bottom = (original.height * 0.90f).toInt().coerceIn(top + 1, original.height)
-    val cropped = Bitmap.createBitmap(
-        original,
-        0,
-        top,
-        original.width,
-        bottom - top
+private fun preprocessBitmap(
+    original: Bitmap,
+    profile: CropProfile = CropProfile.POCKET_OPTION
+): Bitmap {
+    val w = original.width
+    val h = original.height
+
+    val top = (h * profile.topFraction).toInt().coerceIn(0, h - 1)
+    val bottom = (h * profile.bottomFraction).toInt().coerceIn(top + 1, h)
+    val left = (w * profile.leftFraction).toInt().coerceIn(0, w - 1)
+    val right = (w * profile.rightFraction).toInt().coerceIn(left + 1, w)
+
+    val cropW = right - left
+    val cropH = bottom - top
+
+    Log.d(
+        "LocalTradeAI.Crop",
+        "profile=${profile.name} frame=${w}x${h} crop=left:$left top:$top right:$right bottom:$bottom size=${cropW}x$cropH"
     )
+
+    val cropped = Bitmap.createBitmap(original, left, top, cropW, cropH)
 
     val scale = minOf(
         2f,
@@ -61,6 +73,7 @@ private fun preprocessBitmap(original: Bitmap): Bitmap {
     ).coerceAtLeast(1f)
 
     if (scale == 1f) return cropped
+
     val scaled = Bitmap.createScaledBitmap(
         cropped,
         (cropped.width * scale).toInt().coerceAtLeast(1),
@@ -130,10 +143,17 @@ class MainActivity : ComponentActivity() {
                                     recognizedText = "No captured frame available. Start capture first."
                                 } else if (!recognizing) {
                                     recognizing = true
-                                    recognizedText = "Recognizing text…"
-                                    textRecognizer.process(InputImage.fromBitmap(preprocessBitmap(bitmap), 0))
+                                    recognizedText = "Recognizing…"
+                                    textRecognizer.process(
+                                        InputImage.fromBitmap(
+                                            preprocessBitmap(bitmap, CropProfile.POCKET_OPTION),
+                                            0
+                                        )
+                                    )
                                         .addOnSuccessListener { visionText ->
-                                            recognizedText = visionText.text.ifBlank { "No text found in the captured frame." }
+                                            recognizedText = visionText.text.ifBlank {
+                                                "No text found in the cropped Pocket Option frame."
+                                            }
                                         }
                                         .addOnFailureListener { error ->
                                             recognizedText = "OCR failed: ${error.localizedMessage ?: "unknown error"}"
@@ -167,6 +187,10 @@ class MainActivity : ComponentActivity() {
                                 Text(recognizedText, modifier = Modifier.padding(top = 8.dp))
                             }
                         }
+                        Text(
+                            "Pocket Option crop is a calibration starting point. Use GENERIC for the previous 10%/90% vertical fallback when testing other apps.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                         Text(
                             "On-device OCR uses Google ML Kit. Its terms may permit model-download and diagnostic metrics; see the app privacy notice before public release.",
                             style = MaterialTheme.typography.bodySmall
