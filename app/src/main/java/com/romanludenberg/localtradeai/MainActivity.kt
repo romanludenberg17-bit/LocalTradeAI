@@ -3,6 +3,7 @@ package com.romanludenberg.localtradeai
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -35,6 +36,40 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.romanludenberg.localtradeai.capture.ScreenCaptureService
+
+/**
+ * First-pass OCR preprocessing. This deliberately keeps the full width because
+ * chart placement varies between apps and split-screen layouts. It trims only
+ * the top/bottom UI bands and upscales the remaining image, capped to avoid
+ * allocating an excessively large bitmap on-device.
+ */
+private fun preprocessBitmap(original: Bitmap): Bitmap {
+    val top = (original.height * 0.10f).toInt().coerceIn(0, original.height - 1)
+    val bottom = (original.height * 0.90f).toInt().coerceIn(top + 1, original.height)
+    val cropped = Bitmap.createBitmap(
+        original,
+        0,
+        top,
+        original.width,
+        bottom - top
+    )
+
+    val scale = minOf(
+        2f,
+        4096f / cropped.width,
+        4096f / cropped.height
+    ).coerceAtLeast(1f)
+
+    if (scale == 1f) return cropped
+    val scaled = Bitmap.createScaledBitmap(
+        cropped,
+        (cropped.width * scale).toInt().coerceAtLeast(1),
+        (cropped.height * scale).toInt().coerceAtLeast(1),
+        true
+    )
+    if (scaled !== cropped) cropped.recycle()
+    return scaled
+}
 
 class MainActivity : ComponentActivity() {
     private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -96,7 +131,7 @@ class MainActivity : ComponentActivity() {
                                 } else if (!recognizing) {
                                     recognizing = true
                                     recognizedText = "Recognizing text…"
-                                    textRecognizer.process(InputImage.fromBitmap(bitmap, 0))
+                                    textRecognizer.process(InputImage.fromBitmap(preprocessBitmap(bitmap), 0))
                                         .addOnSuccessListener { visionText ->
                                             recognizedText = visionText.text.ifBlank { "No text found in the captured frame." }
                                         }
