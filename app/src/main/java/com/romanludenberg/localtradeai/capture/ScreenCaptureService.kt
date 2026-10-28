@@ -5,6 +5,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.pm.ServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -43,7 +44,15 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        startForeground(NOTIFICATION_ID, createNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    createNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, createNotification())
+            }
         try {
             val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             projection = manager.getMediaProjection(resultCode, consentData)
@@ -140,9 +149,10 @@ class ScreenCaptureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private inline fun <reified T> Intent.parcelableIntent(key: String): T? {
-        return if (Build.VERSION.SDK_INT >= 33) getParcelableExtra(key, T::class.java)
-        else @Suppress("DEPRECATION") (getParcelableExtra(key) as? T)
+    @Suppress("DEPRECATION")
+    private fun Intent.parcelableIntent(key: String): Intent? {
+        return if (Build.VERSION.SDK_INT >= 33) getParcelableExtra(key, Intent::class.java)
+        else getParcelableExtra(key) as? Intent
     }
 
     companion object {
