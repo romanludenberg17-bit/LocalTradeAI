@@ -17,7 +17,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-Install `app/build/outputs/apk/debug/app-debug.apk` on an Android device. Tap **Start capture** and approve Android's system consent dialog. Tap **Stop** to end the session. After a frame is captured, tap **Recognize text** to run OCR on that frame.
+Install `app/build/outputs/apk/debug/app-debug.apk` on an Android device. Tap **Start capture** and approve Android's system consent dialog. Tap **Stop** to end the session. After a frame is captured, tap **Recognize text** to run OCR on that frame. Before OCR, the current experimental preprocessing trims the top and bottom 10% of the frame and upscales the remaining full-width image up to 2× (with a 4096-pixel dimension cap). This is a generic first pass, not chart detection: split-screen layouts or unusual app chrome may require configurable crop bounds. Compare results against the original frame before relying on extracted prices.
 
 ## OCR and privacy
 OCR is performed on the captured bitmap using Google ML Kit Text Recognition. This app does not send the captured bitmap to a custom cloud OCR service. ML Kit's own terms and privacy documentation apply; depending on the SDK/model delivery configuration, Google may process diagnostic or performance metrics and retrieve model updates. Before public distribution, review the current ML Kit terms and Google Play User Data / Data safety requirements, and provide a complete privacy notice appropriate to the shipped configuration. Do not describe the app as fully offline until model delivery and network behavior have been verified on-device.
